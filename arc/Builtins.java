@@ -1,4 +1,4 @@
-// H22.09.30/R02.05.03 (鈴)
+// H22.09.30/R02.05.05 (鈴)
 package arc;
 
 import java.io.File;
@@ -42,13 +42,21 @@ public class Builtins extends BuiltinUtil
     /** atomic-invoke のための排他ロック */
     static final ReentrantLock LOCK = new ReentrantLock();
 
-    /** atomic-invoke の排他ロック解除のための隠し組み込み関数 */
-    static final Intrinsic UNLOCK =
-        c("_unlock", 0, null,
-          (a)-> {
-              LOCK.unlock();
-              return null;
-          });
+    /** atomic-invoke の排他ロックのための式 */
+    static final Cell DO_LOCK =
+        new Cell(c("_lock", 0, null,
+                   (a)-> {
+                       LOCK.lock();
+                       return null;
+                   }), null);
+
+    /** atomic-invoke の排他ロック解除のための式 */
+    static final Cell DO_UNLOCK =
+        new Cell(c("_unlock", 0, null,
+                   (a)-> {
+                       LOCK.unlock();
+                       return null;
+                   }), null);
 
     /** call-w/stdin, call-w/stdout のための隠し組み込み関数 */
     static final Intrinsic PUTSYMVAL =
@@ -187,24 +195,28 @@ public class Builtins extends BuiltinUtil
 
         c("call-w/stdin", 2, "(call-w/stdin input-port nullary-function)",
           (a, eval)-> {
-              var port = a[0];
               var symbols = eval.interp.getSymbolTable();
               var sym = Symbol.of("stdin");
-              var orig = symbols.get(sym);
-              symbols.put(sym, c("_tmp_stdin", 0, null, (x)-> port));
-              eval.k.push(ContOp.DEFER, LL.list(PUTSYMVAL, sym, orig));
+              var old_val = symbols.get(sym);
+              var port = a[0];
+              var new_val = c("_tmp_stdin", 0, null, (x)-> port);
+              symbols.put(sym, new_val);
+              eval.k.pushWind(LL.list(PUTSYMVAL, sym, new_val),
+                              LL.list(PUTSYMVAL, sym, old_val));
               eval.k.push(ContOp.EVAL_VAL, new Cell(a[1], null));
               return null;
           }),
 
         c("call-w/stdout", 2, "(call-w/stdout output-port nullary-function)",
           (a, eval)-> {
-              var port = a[0];
               var symbols = eval.interp.getSymbolTable();
               var sym = Symbol.of("stdout");
-              var orig = symbols.get(sym);
-              symbols.put(sym, c("_tmp_stdout", 0, null, (x)-> port));
-              eval.k.push(ContOp.DEFER, LL.list(PUTSYMVAL, sym, orig));
+              var old_val = symbols.get(sym);
+              var port = a[0];
+              var new_val = c("_tmp_stdout", 0, null, (x)-> port);
+              symbols.put(sym, new_val);
+              eval.k.pushWind(LL.list(PUTSYMVAL, sym, new_val),
+                              LL.list(PUTSYMVAL, sym, old_val));    
               eval.k.push(ContOp.EVAL_VAL, new Cell(a[1], null));
               return null;
           }),
@@ -416,7 +428,7 @@ public class Builtins extends BuiltinUtil
 
         c("protect", 2, "(protect during after): try {during} finally {after}",
           (a, eval)-> {
-              eval.k.push(ContOp.DEFER, new Cell(a[1], null));
+              eval.k.pushWind(null, new Cell(a[1], null));
               eval.k.push(ContOp.EVAL_VAL, new Cell(a[0], null));
               return null;
           }),
@@ -425,7 +437,7 @@ public class Builtins extends BuiltinUtil
         c("atomic-invoke", 1, "(atomic-invoke nullary-function)",
           (a, eval)-> {
               LOCK.lock();
-              eval.k.push(ContOp.DEFER, new Cell(UNLOCK, null));
+              eval.k.pushWind(DO_LOCK, DO_UNLOCK);
               eval.k.push(ContOp.EVAL_VAL, new Cell(a[0], null));
               return null;
           }),

@@ -3,7 +3,7 @@
 This is an interpreter of a nearly complete subset of Arc, a dialect of Lisp
 designed by Paul Graham et al.
 It optimizes _tail calls_ and handles _first-class continuations_ properly.
-It is written in about 4500 lines of Java 11 (OpenJDK 11.0.7)
+It is written in about 4600 lines of Java 11 (OpenJDK 11.0.7)
 with the same prelude [`arc.arc`](arc/arc.arc) as the original in
 [arc3.2.tar](http://www.arclanguage.org/arc3.2.tar)
 at <http://www.arclanguage.org/install>.

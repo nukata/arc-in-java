@@ -1,4 +1,4 @@
-// H22.09.29/R02.05.03 (鈴)
+// H22.09.29/R02.05.05 (鈴)
 // cf. https://github.com/nukata/little-scheme-in-java - Eval.java
 package arc;
 
@@ -200,13 +200,22 @@ public class Eval {
                     case RESULT_VAL: // 現在の exp を捨てて x を結果とする
                         exp = x;
                         break;
-                    case DEFER: // 現在の exp を結果としつつ x を呼び出す
+                    case POP_WIND:
                         {
+                            Cell w = k.popWind();
+                            if (x != w.cdr)
+                                throw new RuntimeException
+                                    ("bad wind " + LL.str(w) + ": " +
+                                     LL.str(x));
+                        }
+                        // POP_WIND はそのまま DEFER へと続く。
+                    case DEFER: // 現在の exp を結果としつつ x を呼び出す
+                        if (x != null) {
                             k.push(ContOp.RESULT_VAL, exp);
                             Cell c = (Cell) x;
                             applyFunction(c.car, (Cell) c.cdr);
-                            break;
                         }
+                        break;
                     default:
                         throw new EvalException ("unexpected op: " + step.op);
                     }
@@ -220,28 +229,17 @@ public class Eval {
                              + "\n\t" + LL.str(k));
             throw x;
         } finally {
-            // 継続に含まれる DEFER 呼び出しを実行する。
-            // DEFER 呼び出しは環境非依存であることを仮定する。
+            // 継続に含まれる winds 呼び出しを実行する。
+            // この呼び出しは環境非依存であることを仮定する。
             if (! k.isEmpty()) {
-                var k2 = new Continuation();
-                do {
-                    Step step = k.pop();
-                    if (step.op == ContOp.DEFER)
-                        k2.push(step.op, step.val);
-                } while (! k.isEmpty());
-                if (! k2.isEmpty()) {
-                    do {
-                        Step step = k2.pop();
-                        k.push(step.op, step.val);
-                    } while (! k2.isEmpty());
-                    exp = null;
-                    evaluate(); // XXX DEFER で ccc の継続を呼び出したら？
-                }
+                k.copyFrom(new Continuation());
+                exp = null;
+                evaluate(); // XXX DEFER で ccc の継続を呼び出したら？
             }
         }
     }
 
-    
+
     // (a b c) => k.push(EVAL_ARG, c); k.push(EVAL_ARG, b); k.push(EVAL_ARG, a)
     // arc.arc の pr 関数の実装は実引数が左から順に評価されることを仮定して
     // いるから，スタックには逆順に評価前実引数を積み上げる。
@@ -307,7 +305,7 @@ public class Eval {
                 exp = ((Intrinsic) fun).call(frame, this);
             }
         } else if (fun instanceof Continuation) {
-            k = new Continuation((Continuation) fun);
+            k.copyFrom((Continuation) fun);
             exp = arg.car;
         } else {
             exp = evalElementAccess(fun, arg);
